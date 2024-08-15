@@ -1,16 +1,18 @@
-from contextlib import contextmanager
 import hashlib
 import math
-from pathlib import Path
 import shutil
 import threading
 import time
 import urllib
 import warnings
 
-from PIL import Image
+from contextlib import contextmanager
+from pathlib import Path
+
 import safetensors
 import torch
+
+from PIL import Image
 from torch import nn, optim
 from torch.utils import data
 from torchvision.transforms import functional as TF
@@ -34,7 +36,7 @@ def to_pil_image(x):
     return TF.to_pil_image((x.clamp(-1, 1) + 1) / 2)
 
 
-def hf_datasets_augs_helper(examples, transform, image_key, mode='RGB'):
+def hf_datasets_augs_helper(examples, transform, image_key, mode="RGB"):
     """Apply passed in transforms for HuggingFace Datasets."""
     images = [transform(image.convert(mode)) for image in examples[image_key]]
     return {image_key: images}
@@ -44,7 +46,7 @@ def append_dims(x, target_dims):
     """Appends dimensions to the end of a tensor until it has target_dims dimensions."""
     dims_to_append = target_dims - x.ndim
     if dims_to_append < 0:
-        raise ValueError(f'input has {x.ndim} dims but target_dims is {target_dims}, which is less')
+        raise ValueError(f"input has {x.ndim} dims but target_dims is {target_dims}, which is less")
     return x[(...,) + (None,) * dims_to_append]
 
 
@@ -58,12 +60,12 @@ def download_file(path, url, digest=None):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
-        with urllib.request.urlopen(url) as response, open(path, 'wb') as f:
+        with urllib.request.urlopen(url) as response, open(path, "wb") as f:
             shutil.copyfileobj(response, f)
     if digest is not None:
-        file_digest = hashlib.sha256(open(path, 'rb').read()).hexdigest()
+        file_digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
         if digest != file_digest:
-            raise OSError(f'hash of {path} (url: {url}) failed to validate')
+            raise OSError(f"hash of {path} (url: {url}) failed to validate")
     return path
 
 
@@ -120,8 +122,7 @@ class EMAWarmup:
         last_epoch (int): The index of last epoch. Default: 0.
     """
 
-    def __init__(self, inv_gamma=1., power=1., min_value=0., max_value=1., start_at=0,
-                 last_epoch=0):
+    def __init__(self, inv_gamma=1.0, power=1.0, min_value=0.0, max_value=1.0, start_at=0, last_epoch=0):
         self.inv_gamma = inv_gamma
         self.power = power
         self.min_value = min_value
@@ -145,7 +146,7 @@ class EMAWarmup:
         """Gets the current EMA decay rate."""
         epoch = max(0, self.last_epoch - self.start_at)
         value = 1 - (1 + epoch / self.inv_gamma) ** -self.power
-        return 0. if epoch < 0 else min(self.max_value, max(self.min_value, value))
+        return 0.0 if epoch < 0 else min(self.max_value, max(self.min_value, value))
 
     def step(self):
         """Updates the step count."""
@@ -169,28 +170,25 @@ class InverseLR(optim.lr_scheduler._LRScheduler):
             each update. Default: ``False``.
     """
 
-    def __init__(self, optimizer, inv_gamma=1., power=1., warmup=0., min_lr=0.,
-                 last_epoch=-1, verbose=False):
+    def __init__(self, optimizer, inv_gamma=1.0, power=1.0, warmup=0.0, min_lr=0.0, last_epoch=-1, verbose=False):
         self.inv_gamma = inv_gamma
         self.power = power
-        if not 0. <= warmup < 1:
-            raise ValueError('Invalid value for warmup')
+        if not 0.0 <= warmup < 1:
+            raise ValueError("Invalid value for warmup")
         self.warmup = warmup
         self.min_lr = min_lr
         super().__init__(optimizer, last_epoch, verbose)
 
     def get_lr(self):
         if not self._get_lr_called_within_step:
-            warnings.warn("To get the last learning rate computed by the scheduler, "
-                          "please use `get_last_lr()`.")
+            warnings.warn("To get the last learning rate computed by the scheduler, " "please use `get_last_lr()`.")
 
         return self._get_closed_form_lr()
 
     def _get_closed_form_lr(self):
         warmup = 1 - self.warmup ** (self.last_epoch + 1)
         lr_mult = (1 + self.last_epoch / self.inv_gamma) ** -self.power
-        return [warmup * max(self.min_lr, base_lr * lr_mult)
-                for base_lr in self.base_lrs]
+        return [warmup * max(self.min_lr, base_lr * lr_mult) for base_lr in self.base_lrs]
 
 
 class ExponentialLR(optim.lr_scheduler._LRScheduler):
@@ -210,28 +208,25 @@ class ExponentialLR(optim.lr_scheduler._LRScheduler):
             each update. Default: ``False``.
     """
 
-    def __init__(self, optimizer, num_steps, decay=0.5, warmup=0., min_lr=0.,
-                 last_epoch=-1, verbose=False):
+    def __init__(self, optimizer, num_steps, decay=0.5, warmup=0.0, min_lr=0.0, last_epoch=-1, verbose=False):
         self.num_steps = num_steps
         self.decay = decay
-        if not 0. <= warmup < 1:
-            raise ValueError('Invalid value for warmup')
+        if not 0.0 <= warmup < 1:
+            raise ValueError("Invalid value for warmup")
         self.warmup = warmup
         self.min_lr = min_lr
         super().__init__(optimizer, last_epoch, verbose)
 
     def get_lr(self):
         if not self._get_lr_called_within_step:
-            warnings.warn("To get the last learning rate computed by the scheduler, "
-                          "please use `get_last_lr()`.")
+            warnings.warn("To get the last learning rate computed by the scheduler, " "please use `get_last_lr()`.")
 
         return self._get_closed_form_lr()
 
     def _get_closed_form_lr(self):
         warmup = 1 - self.warmup ** (self.last_epoch + 1)
         lr_mult = (self.decay ** (1 / self.num_steps)) ** self.last_epoch
-        return [warmup * max(self.min_lr, base_lr * lr_mult)
-                for base_lr in self.base_lrs]
+        return [warmup * max(self.min_lr, base_lr * lr_mult) for base_lr in self.base_lrs]
 
 
 class ConstantLRWithWarmup(optim.lr_scheduler._LRScheduler):
@@ -246,16 +241,15 @@ class ConstantLRWithWarmup(optim.lr_scheduler._LRScheduler):
             each update. Default: ``False``.
     """
 
-    def __init__(self, optimizer, warmup=0., last_epoch=-1, verbose=False):
-        if not 0. <= warmup < 1:
-            raise ValueError('Invalid value for warmup')
+    def __init__(self, optimizer, warmup=0.0, last_epoch=-1, verbose=False):
+        if not 0.0 <= warmup < 1:
+            raise ValueError("Invalid value for warmup")
         self.warmup = warmup
         super().__init__(optimizer, last_epoch, verbose)
 
     def get_lr(self):
         if not self._get_lr_called_within_step:
-            warnings.warn("To get the last learning rate computed by the scheduler, "
-                          "please use `get_last_lr()`.")
+            warnings.warn("To get the last learning rate computed by the scheduler, " "please use `get_last_lr()`.")
 
         return self._get_closed_form_lr()
 
@@ -313,20 +307,20 @@ def enable_stratified_accelerate(accelerator, disable=False):
 def stratified_with_settings(shape, dtype=None, device=None):
     """Draws stratified samples from a uniform distribution, using settings from a context
     manager."""
-    if not hasattr(stratified_settings, 'disable') or stratified_settings.disable:
+    if not hasattr(stratified_settings, "disable") or stratified_settings.disable:
         return torch.rand(shape, dtype=dtype, device=device)
-    return stratified_uniform(
-        shape, stratified_settings.group, stratified_settings.groups, dtype=dtype, device=device
-    )
+    return stratified_uniform(shape, stratified_settings.group, stratified_settings.groups, dtype=dtype, device=device)
 
 
-def rand_log_normal(shape, loc=0., scale=1., device='cpu', dtype=torch.float32):
+def rand_log_normal(shape, loc=0.0, scale=1.0, device="cpu", dtype=torch.float32):
     """Draws samples from an lognormal distribution."""
     u = stratified_with_settings(shape, device=device, dtype=dtype) * (1 - 2e-7) + 1e-7
     return torch.distributions.Normal(loc, scale).icdf(u).exp()
 
 
-def rand_log_logistic(shape, loc=0., scale=1., min_value=0., max_value=float('inf'), device='cpu', dtype=torch.float32):
+def rand_log_logistic(
+    shape, loc=0.0, scale=1.0, min_value=0.0, max_value=float("inf"), device="cpu", dtype=torch.float32
+):
     """Draws samples from an optionally truncated log-logistic distribution."""
     min_value = torch.as_tensor(min_value, device=device, dtype=torch.float64)
     max_value = torch.as_tensor(max_value, device=device, dtype=torch.float64)
@@ -336,14 +330,14 @@ def rand_log_logistic(shape, loc=0., scale=1., min_value=0., max_value=float('in
     return u.logit().mul(scale).add(loc).exp().to(dtype)
 
 
-def rand_log_uniform(shape, min_value, max_value, device='cpu', dtype=torch.float32):
+def rand_log_uniform(shape, min_value, max_value, device="cpu", dtype=torch.float32):
     """Draws samples from an log-uniform distribution."""
     min_value = math.log(min_value)
     max_value = math.log(max_value)
     return (stratified_with_settings(shape, device=device, dtype=dtype) * (max_value - min_value) + min_value).exp()
 
 
-def rand_v_diffusion(shape, sigma_data=1., min_value=0., max_value=float('inf'), device='cpu', dtype=torch.float32):
+def rand_v_diffusion(shape, sigma_data=1.0, min_value=0.0, max_value=float("inf"), device="cpu", dtype=torch.float32):
     """Draws samples from a truncated v-diffusion training timestep distribution."""
     min_cdf = math.atan(min_value / sigma_data) * 2 / math.pi
     max_cdf = math.atan(max_value / sigma_data) * 2 / math.pi
@@ -351,7 +345,17 @@ def rand_v_diffusion(shape, sigma_data=1., min_value=0., max_value=float('inf'),
     return torch.tan(u * math.pi / 2) * sigma_data
 
 
-def rand_cosine_interpolated(shape, image_d, noise_d_low, noise_d_high, sigma_data=1., min_value=1e-3, max_value=1e3, device='cpu', dtype=torch.float32):
+def rand_cosine_interpolated(
+    shape,
+    image_d,
+    noise_d_low,
+    noise_d_high,
+    sigma_data=1.0,
+    min_value=1e-3,
+    max_value=1e3,
+    device="cpu",
+    dtype=torch.float32,
+):
     """Draws samples from an interpolated cosine timestep distribution (from simple diffusion)."""
 
     def logsnr_schedule_cosine(t, logsnr_min, logsnr_max):
@@ -375,7 +379,7 @@ def rand_cosine_interpolated(shape, image_d, noise_d_low, noise_d_high, sigma_da
     return torch.exp(-logsnr / 2) * sigma_data
 
 
-def rand_split_log_normal(shape, loc, scale_1, scale_2, device='cpu', dtype=torch.float32):
+def rand_split_log_normal(shape, loc, scale_1, scale_2, device="cpu", dtype=torch.float32):
     """Draws samples from a split lognormal distribution."""
     n = torch.randn(shape, device=device, dtype=dtype).abs()
     u = torch.rand(shape, device=device, dtype=dtype)
@@ -389,13 +393,13 @@ class FolderOfImages(data.Dataset):
     """Recursively finds all images in a directory. It does not support
     classes/targets."""
 
-    IMG_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp'}
+    IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".ppm", ".bmp", ".pgm", ".tif", ".tiff", ".webp"}
 
     def __init__(self, root, transform=None):
         super().__init__()
         self.root = Path(root)
         self.transform = nn.Identity() if transform is None else transform
-        self.paths = sorted(path for path in self.root.rglob('*') if path.suffix.lower() in self.IMG_EXTENSIONS)
+        self.paths = sorted(path for path in self.root.rglob("*") if path.suffix.lower() in self.IMG_EXTENSIONS)
 
     def __repr__(self):
         return f'FolderOfImages(root="{self.root}", len: {len(self)})'
@@ -405,10 +409,10 @@ class FolderOfImages(data.Dataset):
 
     def __getitem__(self, key):
         path = self.paths[key]
-        with open(path, 'rb') as f:
-            image = Image.open(f).convert('RGB')
+        with open(path, "rb") as f:
+            image = Image.open(f).convert("RGB")
         image = self.transform(image)
-        return image,
+        return (image,)
 
 
 class CSVLogger:
@@ -416,13 +420,13 @@ class CSVLogger:
         self.filename = Path(filename)
         self.columns = columns
         if self.filename.exists():
-            self.file = open(self.filename, 'a')
+            self.file = open(self.filename, "a")
         else:
-            self.file = open(self.filename, 'w')
+            self.file = open(self.filename, "w")
             self.write(*self.columns)
 
     def write(self, *args):
-        print(*args, sep=',', file=self.file, flush=True)
+        print(*args, sep=",", file=self.file, flush=True)
 
 
 @contextmanager

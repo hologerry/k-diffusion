@@ -2,9 +2,11 @@ import math
 
 import torch
 import torch._dynamo
+
 from torch import nn
 
 from . import flags
+
 
 if flags.get_use_compile():
     torch._dynamo.config.suppress_errors = True
@@ -22,7 +24,9 @@ def apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
     freqs = freqs.to(t)
     rot_dim = freqs.shape[-1]
     end_index = start_index + rot_dim
-    assert rot_dim <= t.shape[-1], f"feature dimension {t.shape[-1]} is not of sufficient size to rotate in all the positions {rot_dim}"
+    assert (
+        rot_dim <= t.shape[-1]
+    ), f"feature dimension {t.shape[-1]} is not of sufficient size to rotate in all the positions {rot_dim}"
     t_left, t, t_right = t[..., :start_index], t[..., start_index:end_index], t[..., end_index:]
     t = (t * freqs.cos() * scale) + (rotate_half(t) * freqs.sin() * scale)
     return torch.cat((t_left, t, t_right), dim=-1)
@@ -34,7 +38,7 @@ def centers(start, stop, num, dtype=None, device=None):
 
 
 def make_grid(h_pos, w_pos):
-    grid = torch.stack(torch.meshgrid(h_pos, w_pos, indexing='ij'), dim=-1)
+    grid = torch.stack(torch.meshgrid(h_pos, w_pos, indexing="ij"), dim=-1)
     h, w, d = grid.shape
     return grid.view(h * w, d)
 
@@ -72,6 +76,7 @@ def freqs_pixel(max_freq=10.0):
     def init(shape):
         freqs = torch.linspace(1.0, max_freq / 2, shape[-1]) * math.pi
         return freqs.log().expand(shape)
+
     return init
 
 
@@ -80,6 +85,7 @@ def freqs_pixel_log(max_freq=10.0):
         log_min = math.log(math.pi)
         log_max = math.log(max_freq * math.pi / 2)
         return torch.linspace(log_min, log_max, shape[-1]).expand(shape)
+
     return init
 
 

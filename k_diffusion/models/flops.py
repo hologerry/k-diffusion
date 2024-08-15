@@ -1,6 +1,7 @@
-from contextlib import contextmanager
 import math
 import threading
+
+from contextlib import contextmanager
 
 
 state = threading.local()

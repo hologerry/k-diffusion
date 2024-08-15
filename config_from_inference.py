@@ -3,21 +3,17 @@
 """Extracts the configuration file from a slim inference checkpoint."""
 
 import argparse
-import json
-from pathlib import Path
 import sys
 
+from pathlib import Path
+
 import k_diffusion as K
-import safetensors.torch as safetorch
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("checkpoint", type=Path,
-                   help="the inference checkpoint to extract the configuration from")
-    p.add_argument("--output", "-o", type=Path,
-                   help="the output configuration file")
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument("checkpoint", type=Path, help="the inference checkpoint to extract the configuration from")
+    p.add_argument("--output", "-o", type=Path, help="the output configuration file")
     args = p.parse_args()
 
     print(f"Loading inference checkpoint {args.checkpoint}...", file=sys.stderr)

@@ -1,18 +1,20 @@
 """k-diffusion transformer diffusion models, version 2."""
 
+import math
+
 from dataclasses import dataclass
 from functools import lru_cache, reduce
-import math
 from typing import Union
 
-from einops import rearrange
 import torch
-from torch import nn
 import torch._dynamo
+
+from einops import rearrange
+from torch import nn
 from torch.nn import functional as F
 
-from . import flags, flops
 from .. import layers
+from . import flags, flops
 from .axial_rope import make_axial_pos
 
 
@@ -33,6 +35,7 @@ if flags.get_use_compile():
 
 
 # Helpers
+
 
 def zero_init(layer):
     nn.init.zeros_(layer.weight)
@@ -55,6 +58,7 @@ def downscale_pos(pos):
 
 
 # Param tags
+
 
 def tag_param(param, tag):
     if not hasattr(param, "_tags"):
@@ -86,6 +90,7 @@ def filter_params(function, module):
 
 # Kernels
 
+
 @flags.compile_wrap
 def linear_geglu(x, weight, bias=None):
     x = x @ weight.mT
@@ -98,7 +103,7 @@ def linear_geglu(x, weight, bias=None):
 @flags.compile_wrap
 def rms_norm(x, scale, eps):
     dtype = reduce(torch.promote_types, (x.dtype, scale.dtype, torch.float32))
-    mean_sq = torch.mean(x.to(dtype)**2, dim=-1, keepdim=True)
+    mean_sq = torch.mean(x.to(dtype) ** 2, dim=-1, keepdim=True)
     scale = scale.to(dtype) * torch.rsqrt(mean_sq + eps)
     return x * scale.to(x.dtype)
 
@@ -106,8 +111,8 @@ def rms_norm(x, scale, eps):
 @flags.compile_wrap
 def scale_for_cosine_sim(q, k, scale, eps):
     dtype = reduce(torch.promote_types, (q.dtype, k.dtype, scale.dtype, torch.float32))
-    sum_sq_q = torch.sum(q.to(dtype)**2, dim=-1, keepdim=True)
-    sum_sq_k = torch.sum(k.to(dtype)**2, dim=-1, keepdim=True)
+    sum_sq_q = torch.sum(q.to(dtype) ** 2, dim=-1, keepdim=True)
+    sum_sq_k = torch.sum(k.to(dtype) ** 2, dim=-1, keepdim=True)
     sqrt_scale = torch.sqrt(scale.to(dtype))
     scale_q = sqrt_scale * torch.rsqrt(sum_sq_q + eps)
     scale_k = sqrt_scale * torch.rsqrt(sum_sq_k + eps)
@@ -122,6 +127,7 @@ def scale_for_cosine_sim_qkv(qkv, scale, eps):
 
 
 # Layers
+
 
 class Linear(nn.Linear):
     def forward(self, x):
@@ -168,6 +174,7 @@ class AdaRMSNorm(nn.Module):
 
 # Rotary position embeddings
 
+
 @flags.compile_wrap
 def apply_rotary_emb(x, theta, conj=False):
     out_dtype = x.dtype
@@ -213,7 +220,7 @@ class ApplyRotaryEmbeddingInplace(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        theta, = ctx.saved_tensors
+        (theta,) = ctx.saved_tensors
         _apply_rotary_emb_inplace(grad_output, theta, conj=not ctx.conj)
         return grad_output, None, None
 
@@ -240,6 +247,7 @@ class AxialRoPE(nn.Module):
 
 
 # Shifted window attention
+
 
 def window(window_size, x):
     *b, h, w, c = x.shape
@@ -294,12 +302,7 @@ def make_shifted_window_masks(n_h_w, n_w_w, w_h, w_w, shift, device=None):
     k_above_shift = k_h < shift
     q_left_of_shift = q_w < shift
     k_left_of_shift = k_w < shift
-    m_corner = (
-        is_left_patch
-        & is_top_patch
-        & (q_left_of_shift == k_left_of_shift)
-        & (q_above_shift == k_above_shift)
-    )
+    m_corner = is_left_patch & is_top_patch & (q_left_of_shift == k_left_of_shift) & (q_above_shift == k_above_shift)
     m_left = is_left_patch & ~is_top_patch & (q_left_of_shift == k_left_of_shift)
     m_top = ~is_left_patch & is_top_patch & (q_above_shift == k_above_shift)
     m_rest = ~is_left_patch & ~is_top_patch
@@ -512,7 +515,9 @@ class ShiftedWindowTransformerLayer(nn.Module):
     def __init__(self, d_model, d_ff, d_head, cond_features, window_size, index, dropout=0.0):
         super().__init__()
         window_shift = window_size // 2 if index % 2 == 1 else 0
-        self.self_attn = ShiftedWindowSelfAttentionBlock(d_model, d_head, cond_features, window_size, window_shift, dropout=dropout)
+        self.self_attn = ShiftedWindowSelfAttentionBlock(
+            d_model, d_head, cond_features, window_size, window_shift, dropout=dropout
+        )
         self.ff = FeedForwardBlock(d_model, d_ff, cond_features, dropout=dropout)
 
     def forward(self, x, pos, cond):
@@ -539,6 +544,7 @@ class Level(nn.ModuleList):
 
 
 # Mapping network
+
 
 class MappingFeedForwardBlock(nn.Module):
     def __init__(self, d_model, d_ff, dropout=0.0):
@@ -573,6 +579,7 @@ class MappingNetwork(nn.Module):
 
 
 # Token merging and splitting
+
 
 class TokenMerge(nn.Module):
     def __init__(self, in_features, out_features, patch_size=(2, 2)):
@@ -613,6 +620,7 @@ class TokenSplit(nn.Module):
 
 
 # Configuration
+
 
 @dataclass
 class GlobalAttentionSpec:
@@ -655,6 +663,7 @@ class MappingSpec:
 
 # Model class
 
+
 class ImageTransformerDenoiserModelV2(nn.Module):
     def __init__(self, levels, mapping, in_channels, out_channels, patch_size, num_classes=0, mapping_cond_dim=0):
         super().__init__()
@@ -668,18 +677,39 @@ class ImageTransformerDenoiserModelV2(nn.Module):
         self.aug_in_proj = Linear(mapping.width, mapping.width, bias=False)
         self.class_emb = nn.Embedding(num_classes, mapping.width) if num_classes else None
         self.mapping_cond_in_proj = Linear(mapping_cond_dim, mapping.width, bias=False) if mapping_cond_dim else None
-        self.mapping = tag_module(MappingNetwork(mapping.depth, mapping.width, mapping.d_ff, dropout=mapping.dropout), "mapping")
+        self.mapping = tag_module(
+            MappingNetwork(mapping.depth, mapping.width, mapping.d_ff, dropout=mapping.dropout), "mapping"
+        )
 
         self.down_levels, self.up_levels = nn.ModuleList(), nn.ModuleList()
         for i, spec in enumerate(levels):
             if isinstance(spec.self_attn, GlobalAttentionSpec):
-                layer_factory = lambda _: GlobalTransformerLayer(spec.width, spec.d_ff, spec.self_attn.d_head, mapping.width, dropout=spec.dropout)
+                layer_factory = lambda _: GlobalTransformerLayer(
+                    spec.width, spec.d_ff, spec.self_attn.d_head, mapping.width, dropout=spec.dropout
+                )
             elif isinstance(spec.self_attn, NeighborhoodAttentionSpec):
-                layer_factory = lambda _: NeighborhoodTransformerLayer(spec.width, spec.d_ff, spec.self_attn.d_head, mapping.width, spec.self_attn.kernel_size, dropout=spec.dropout)
+                layer_factory = lambda _: NeighborhoodTransformerLayer(
+                    spec.width,
+                    spec.d_ff,
+                    spec.self_attn.d_head,
+                    mapping.width,
+                    spec.self_attn.kernel_size,
+                    dropout=spec.dropout,
+                )
             elif isinstance(spec.self_attn, ShiftedWindowAttentionSpec):
-                layer_factory = lambda i: ShiftedWindowTransformerLayer(spec.width, spec.d_ff, spec.self_attn.d_head, mapping.width, spec.self_attn.window_size, i, dropout=spec.dropout)
+                layer_factory = lambda i: ShiftedWindowTransformerLayer(
+                    spec.width,
+                    spec.d_ff,
+                    spec.self_attn.d_head,
+                    mapping.width,
+                    spec.self_attn.window_size,
+                    i,
+                    dropout=spec.dropout,
+                )
             elif isinstance(spec.self_attn, NoAttentionSpec):
-                layer_factory = lambda _: NoAttentionTransformerLayer(spec.width, spec.d_ff, mapping.width, dropout=spec.dropout)
+                layer_factory = lambda _: NoAttentionTransformerLayer(
+                    spec.width, spec.d_ff, mapping.width, dropout=spec.dropout
+                )
             else:
                 raise ValueError(f"unsupported self attention spec {spec.self_attn}")
 
@@ -689,14 +719,18 @@ class ImageTransformerDenoiserModelV2(nn.Module):
             else:
                 self.mid_level = Level([layer_factory(i) for i in range(spec.depth)])
 
-        self.merges = nn.ModuleList([TokenMerge(spec_1.width, spec_2.width) for spec_1, spec_2 in zip(levels[:-1], levels[1:])])
-        self.splits = nn.ModuleList([TokenSplit(spec_2.width, spec_1.width) for spec_1, spec_2 in zip(levels[:-1], levels[1:])])
+        self.merges = nn.ModuleList(
+            [TokenMerge(spec_1.width, spec_2.width) for spec_1, spec_2 in zip(levels[:-1], levels[1:])]
+        )
+        self.splits = nn.ModuleList(
+            [TokenSplit(spec_2.width, spec_1.width) for spec_1, spec_2 in zip(levels[:-1], levels[1:])]
+        )
 
         self.out_norm = RMSNorm(levels[0].width)
         self.patch_out = TokenSplitWithoutSkip(levels[0].width, out_channels, patch_size)
         nn.init.zeros_(self.patch_out.proj.weight)
 
-    def param_groups(self, base_lr=5e-4, mapping_lr_scale=1 / 3):
+    def param_groups(self, base_lr=5e-4, mapping_lr_scale=1/3):
         wd = filter_params(lambda tags: "wd" in tags and "mapping" not in tags, self)
         no_wd = filter_params(lambda tags: "wd" not in tags and "mapping" not in tags, self)
         mapping_wd = filter_params(lambda tags: "wd" in tags and "mapping" in tags, self)
@@ -705,7 +739,7 @@ class ImageTransformerDenoiserModelV2(nn.Module):
             {"params": list(wd), "lr": base_lr},
             {"params": list(no_wd), "lr": base_lr, "weight_decay": 0.0},
             {"params": list(mapping_wd), "lr": base_lr * mapping_lr_scale},
-            {"params": list(mapping_no_wd), "lr": base_lr * mapping_lr_scale, "weight_decay": 0.0}
+            {"params": list(mapping_no_wd), "lr": base_lr * mapping_lr_scale, "weight_decay": 0.0},
         ]
         return groups
 

@@ -4,28 +4,24 @@
 
 import argparse
 import json
-from pathlib import Path
 import sys
 
-import torch
+from pathlib import Path
+
 import safetensors.torch as safetorch
+import torch
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("checkpoint", type=Path,
-                   help="the training checkpoint to convert")
-    p.add_argument("--config", type=Path,
-                   help="override the checkpoint's configuration")
-    p.add_argument("--output", "-o", type=Path,
-                   help="the output slim checkpoint")
-    p.add_argument("--dtype", type=str, choices=["fp32", "fp16", "bf16"], default="fp16",
-                   help="the output dtype")
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument("checkpoint", type=Path, help="the training checkpoint to convert")
+    p.add_argument("--config", type=Path, help="override the checkpoint's configuration")
+    p.add_argument("--output", "-o", type=Path, help="the output slim checkpoint")
+    p.add_argument("--dtype", type=str, choices=["fp32", "fp16", "bf16"], default="fp16", help="the output dtype")
     args = p.parse_args()
 
     print(f"Loading training checkpoint {args.checkpoint}...", file=sys.stderr)
-    ckpt = torch.load(args.checkpoint, map_location="cpu")
+    ckpt = safetorch.load(args.checkpoint, map_location="cpu")
     config = ckpt.get("config", None)
     model_ema = ckpt["model_ema"]
     del ckpt

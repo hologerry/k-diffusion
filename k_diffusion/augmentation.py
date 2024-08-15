@@ -1,36 +1,32 @@
-from functools import reduce
 import math
 import operator
 
+from functools import reduce
+
 import numpy as np
-from skimage import transform
 import torch
+
+from skimage import transform
 from torch import nn
 
 
 def translate2d(tx, ty):
-    mat = [[1, 0, tx],
-           [0, 1, ty],
-           [0, 0,  1]]
+    mat = [[1, 0, tx], [0, 1, ty], [0, 0, 1]]
     return torch.tensor(mat, dtype=torch.float32)
 
 
 def scale2d(sx, sy):
-    mat = [[sx,  0, 0],
-           [ 0, sy, 0],
-           [ 0,  0, 1]]
+    mat = [[sx, 0, 0], [0, sy, 0], [0, 0, 1]]
     return torch.tensor(mat, dtype=torch.float32)
 
 
 def rotate2d(theta):
-    mat = [[torch.cos(theta), torch.sin(-theta), 0],
-           [torch.sin(theta),  torch.cos(theta), 0],
-           [               0,                 0, 1]]
+    mat = [[torch.cos(theta), torch.sin(-theta), 0], [torch.sin(theta), torch.cos(theta), 0], [0, 0, 1]]
     return torch.tensor(mat, dtype=torch.float32)
 
 
 class KarrasAugmentationPipeline:
-    def __init__(self, a_prob=0.12, a_scale=2**0.2, a_aniso=2**0.2, a_trans=1/8, disable_all=False):
+    def __init__(self, a_prob=0.12, a_scale=2**0.2, a_aniso=2**0.2, a_trans=1 / 8, disable_all=False):
         self.a_prob = a_prob
         self.a_scale = a_scale
         self.a_aniso = a_aniso
@@ -51,7 +47,7 @@ class KarrasAugmentationPipeline:
         # scaling
         do = (torch.rand([]) < self.a_prob).float()
         a2 = torch.randn([]) * do
-        mats.append(scale2d(self.a_scale ** a2, self.a_scale ** a2))
+        mats.append(scale2d(self.a_scale**a2, self.a_scale**a2))
         # rotation
         do = (torch.rand([]) < self.a_prob).float()
         a3 = (torch.rand([]) * 2 * math.pi - math.pi) * do
@@ -61,7 +57,7 @@ class KarrasAugmentationPipeline:
         a4 = (torch.rand([]) * 2 * math.pi - math.pi) * do
         a5 = torch.randn([]) * do
         mats.append(rotate2d(a4))
-        mats.append(scale2d(self.a_aniso ** a5, self.a_aniso ** -a5))
+        mats.append(scale2d(self.a_aniso**a5, self.a_aniso**-a5))
         mats.append(rotate2d(-a4))
         # translation
         do = (torch.rand([]) < self.a_prob).float()
@@ -80,7 +76,9 @@ class KarrasAugmentationPipeline:
             image_orig = image_orig[..., None]
         tf = transform.AffineTransform(mat.numpy())
         if not self.disable_all:
-            image = transform.warp(image_orig, tf.inverse, order=3, mode='reflect', cval=0.5, clip=False, preserve_range=True)
+            image = transform.warp(
+                image_orig, tf.inverse, order=3, mode="reflect", cval=0.5, clip=False, preserve_range=True
+            )
         else:
             image = image_orig
             cond = torch.zeros_like(cond)
@@ -93,7 +91,7 @@ class KarrasAugmentWrapper(nn.Module):
     def __init__(self, model):
         super().__init__()
         self.inner_model = model
-    
+
     def forward(self, input, sigma, aug_cond=None, mapping_cond=None, **kwargs):
         if aug_cond is None:
             aug_cond = input.new_zeros([input.shape[0], 9])

@@ -2,15 +2,17 @@
 
 import math
 
-from einops import rearrange
 import torch
-from torch import nn
 import torch._dynamo
+
+from einops import rearrange
+from torch import nn
 from torch.nn import functional as F
 
-from . import flags
 from .. import layers
+from . import flags
 from .axial_rope import AxialRoPE, make_axial_pos
+
 
 if flags.get_use_compile():
     torch._dynamo.config.suppress_errors = True
@@ -63,6 +65,7 @@ def scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0):
     if flags.get_use_flash_attention_2() and attn_mask is None:
         try:
             from flash_attn import flash_attn_func
+
             q_ = q.transpose(-3, -2)
             k_ = k.transpose(-3, -2)
             v_ = v.transpose(-3, -2)
@@ -82,7 +85,7 @@ def geglu(x):
 @flags.compile_wrap
 def rms_norm(x, scale, eps):
     dtype = torch.promote_types(x.dtype, torch.float32)
-    mean_sq = torch.mean(x.to(dtype)**2, dim=-1, keepdim=True)
+    mean_sq = torch.mean(x.to(dtype) ** 2, dim=-1, keepdim=True)
     scale = scale.to(dtype) * torch.rsqrt(mean_sq + eps)
     return x * scale.to(x.dtype)
 
@@ -219,7 +222,9 @@ class Patching(nn.Module):
         h_out = h // self.patch_size[0]
         w_out = w // self.patch_size[1]
         if h % self.patch_size[0] != 0 or w % self.patch_size[1] != 0:
-            raise ValueError(f"Image size {h}x{w} is not divisible by patch size {self.patch_size[0]}x{self.patch_size[1]}")
+            raise ValueError(
+                f"Image size {h}x{w} is not divisible by patch size {self.patch_size[0]}x{self.patch_size[1]}"
+            )
         x = rearrange(x, "... c (h i) (w j) -> ... (h w) (c i j)", i=self.patch_size[0], j=self.patch_size[1])
         pixel_aspect_ratio = pixel_aspect_ratio * self.patch_size[0] / self.patch_size[1]
         pos = make_axial_pos(h_out, w_out, pixel_aspect_ratio, device=x.device)
@@ -239,7 +244,9 @@ class Unpatching(nn.Module):
     def forward(self, x, h, w):
         h_in = h // self.patch_size[0]
         w_in = w // self.patch_size[1]
-        x = rearrange(x, "... (h w) (c i j) -> ... c (h i) (w j)", h=h_in, w=w_in, i=self.patch_size[0], j=self.patch_size[1])
+        x = rearrange(
+            x, "... (h w) (c i j) -> ... c (h i) (w j)", h=h_in, w=w_in, i=self.patch_size[0], j=self.patch_size[1]
+        )
         return x
 
 
@@ -278,7 +285,18 @@ class MappingNetwork(nn.Module):
 
 
 class ImageTransformerDenoiserModelV1(nn.Module):
-    def __init__(self, n_layers, d_model, d_ff, in_features, out_features, patch_size, num_classes=0, dropout=0.0, sigma_data=1.0):
+    def __init__(
+        self,
+        n_layers,
+        d_model,
+        d_ff,
+        in_features,
+        out_features,
+        patch_size,
+        num_classes=0,
+        dropout=0.0,
+        sigma_data=1.0,
+    ):
         super().__init__()
         self.sigma_data = sigma_data
         self.num_classes = num_classes
@@ -310,7 +328,7 @@ class ImageTransformerDenoiserModelV1(nn.Module):
             {"params": list(wd), "lr": base_lr},
             {"params": list(no_wd), "lr": base_lr, "weight_decay": 0.0},
             {"params": list(mapping_wd), "lr": base_lr * mapping_lr_scale},
-            {"params": list(mapping_no_wd), "lr": base_lr * mapping_lr_scale, "weight_decay": 0.0}
+            {"params": list(mapping_no_wd), "lr": base_lr * mapping_lr_scale, "weight_decay": 0.0},
         ]
         return groups
 

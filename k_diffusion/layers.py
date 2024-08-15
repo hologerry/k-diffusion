@@ -1,9 +1,11 @@
-from functools import lru_cache, reduce
 import math
+
+from functools import lru_cache, reduce
+
+import torch
 
 from dctorch import functional as df
 from einops import rearrange, repeat
-import torch
 from torch import nn
 from torch.nn import functional as F
 
@@ -20,7 +22,7 @@ def dct(x):
         return df.dct2(x)
     if x.ndim == 5:
         return df.dct3(x)
-    raise ValueError(f'Unsupported dimensionality {x.ndim}')
+    raise ValueError(f"Unsupported dimensionality {x.ndim}")
 
 
 @lru_cache
@@ -45,32 +47,32 @@ def freq_weight_nd(shape, scales=0, dtype=None, device=None):
 class Denoiser(nn.Module):
     """A Karras et al. preconditioner for denoising diffusion models."""
 
-    def __init__(self, inner_model, sigma_data=1., weighting='karras', scales=1):
+    def __init__(self, inner_model, sigma_data=1.0, weighting="karras", scales=1):
         super().__init__()
         self.inner_model = inner_model
         self.sigma_data = sigma_data
         self.scales = scales
         if callable(weighting):
             self.weighting = weighting
-        if weighting == 'karras':
+        if weighting == "karras":
             self.weighting = torch.ones_like
-        elif weighting == 'soft-min-snr':
+        elif weighting == "soft-min-snr":
             self.weighting = self._weighting_soft_min_snr
-        elif weighting == 'snr':
+        elif weighting == "snr":
             self.weighting = self._weighting_snr
         else:
-            raise ValueError(f'Unknown weighting type {weighting}')
+            raise ValueError(f"Unknown weighting type {weighting}")
 
     def _weighting_soft_min_snr(self, sigma):
-        return (sigma * self.sigma_data) ** 2 / (sigma ** 2 + self.sigma_data ** 2) ** 2
+        return (sigma * self.sigma_data) ** 2 / (sigma**2 + self.sigma_data**2) ** 2
 
     def _weighting_snr(self, sigma):
-        return self.sigma_data ** 2 / (sigma ** 2 + self.sigma_data ** 2)
+        return self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
 
     def get_scalings(self, sigma):
-        c_skip = self.sigma_data ** 2 / (sigma ** 2 + self.sigma_data ** 2)
-        c_out = sigma * self.sigma_data / (sigma ** 2 + self.sigma_data ** 2) ** 0.5
-        c_in = 1 / (sigma ** 2 + self.sigma_data ** 2) ** 0.5
+        c_skip = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
+        c_out = sigma * self.sigma_data / (sigma**2 + self.sigma_data**2) ** 0.5
+        c_in = 1 / (sigma**2 + self.sigma_data**2) ** 0.5
         return c_skip, c_out, c_in
 
     def loss(self, input, noise, sigma, **kwargs):
@@ -113,6 +115,7 @@ class SimpleLossDenoiser(Denoiser):
 
 # Residual blocks
 
+
 class ResidualBlock(nn.Module):
     def __init__(self, *main, skip=None):
         super().__init__()
@@ -124,6 +127,7 @@ class ResidualBlock(nn.Module):
 
 
 # Noise level (and other) conditioning
+
 
 class ConditionedModule(nn.Module):
     pass
@@ -160,7 +164,7 @@ class ConditionedResidualBlock(ConditionedModule):
 
 
 class AdaGN(ConditionedModule):
-    def __init__(self, feats_in, c_out, num_groups, eps=1e-5, cond_key='cond'):
+    def __init__(self, feats_in, c_out, num_groups, eps=1e-5, cond_key="cond"):
         super().__init__()
         self.num_groups = num_groups
         self.eps = eps
@@ -179,7 +183,7 @@ class AdaGN(ConditionedModule):
 
 
 class SelfAttention2d(ConditionedModule):
-    def __init__(self, c_in, n_head, norm, dropout_rate=0.):
+    def __init__(self, c_in, n_head, norm, dropout_rate=0.0):
         super().__init__()
         assert c_in % n_head == 0
         self.norm_in = norm(c_in)
@@ -201,8 +205,9 @@ class SelfAttention2d(ConditionedModule):
 
 
 class CrossAttention2d(ConditionedModule):
-    def __init__(self, c_dec, c_enc, n_head, norm_dec, dropout_rate=0.,
-                 cond_key='cross', cond_key_padding='cross_padding'):
+    def __init__(
+        self, c_dec, c_enc, n_head, norm_dec, dropout_rate=0.0, cond_key="cross", cond_key_padding="cross_padding"
+    ):
         super().__init__()
         assert c_dec % n_head == 0
         self.cond_key = cond_key
@@ -233,28 +238,34 @@ class CrossAttention2d(ConditionedModule):
 # Downsampling/upsampling
 
 _kernels = {
-    'linear':
-        [1 / 8, 3 / 8, 3 / 8, 1 / 8],
-    'cubic': 
-        [-0.01171875, -0.03515625, 0.11328125, 0.43359375,
-        0.43359375, 0.11328125, -0.03515625, -0.01171875],
-    'lanczos3': 
-        [0.003689131001010537, 0.015056144446134567, -0.03399861603975296,
-        -0.066637322306633, 0.13550527393817902, 0.44638532400131226,
-        0.44638532400131226, 0.13550527393817902, -0.066637322306633,
-        -0.03399861603975296, 0.015056144446134567, 0.003689131001010537]
+    "linear": [1 / 8, 3 / 8, 3 / 8, 1 / 8],
+    "cubic": [-0.01171875, -0.03515625, 0.11328125, 0.43359375, 0.43359375, 0.11328125, -0.03515625, -0.01171875],
+    "lanczos3": [
+        0.003689131001010537,
+        0.015056144446134567,
+        -0.03399861603975296,
+        -0.066637322306633,
+        0.13550527393817902,
+        0.44638532400131226,
+        0.44638532400131226,
+        0.13550527393817902,
+        -0.066637322306633,
+        -0.03399861603975296,
+        0.015056144446134567,
+        0.003689131001010537,
+    ],
 }
-_kernels['bilinear'] = _kernels['linear']
-_kernels['bicubic'] = _kernels['cubic']
+_kernels["bilinear"] = _kernels["linear"]
+_kernels["bicubic"] = _kernels["cubic"]
 
 
 class Downsample2d(nn.Module):
-    def __init__(self, kernel='linear', pad_mode='reflect'):
+    def __init__(self, kernel="linear", pad_mode="reflect"):
         super().__init__()
         self.pad_mode = pad_mode
         kernel_1d = torch.tensor([_kernels[kernel]])
         self.pad = kernel_1d.shape[1] // 2 - 1
-        self.register_buffer('kernel', kernel_1d.T @ kernel_1d)
+        self.register_buffer("kernel", kernel_1d.T @ kernel_1d)
 
     def forward(self, x):
         x = F.pad(x, (self.pad,) * 4, self.pad_mode)
@@ -265,12 +276,12 @@ class Downsample2d(nn.Module):
 
 
 class Upsample2d(nn.Module):
-    def __init__(self, kernel='linear', pad_mode='reflect'):
+    def __init__(self, kernel="linear", pad_mode="reflect"):
         super().__init__()
         self.pad_mode = pad_mode
         kernel_1d = torch.tensor([_kernels[kernel]]) * 2
         self.pad = kernel_1d.shape[1] // 2 - 1
-        self.register_buffer('kernel', kernel_1d.T @ kernel_1d)
+        self.register_buffer("kernel", kernel_1d.T @ kernel_1d)
 
     def forward(self, x):
         x = F.pad(x, ((self.pad + 1) // 2,) * 4, self.pad_mode)
@@ -282,11 +293,12 @@ class Upsample2d(nn.Module):
 
 # Embeddings
 
+
 class FourierFeatures(nn.Module):
-    def __init__(self, in_features, out_features, std=1.):
+    def __init__(self, in_features, out_features, std=1.0):
         super().__init__()
         assert out_features % 2 == 0
-        self.register_buffer('weight', torch.randn([out_features // 2, in_features]) * std)
+        self.register_buffer("weight", torch.randn([out_features // 2, in_features]) * std)
 
     def forward(self, input):
         f = 2 * math.pi * input @ self.weight.T
@@ -294,6 +306,7 @@ class FourierFeatures(nn.Module):
 
 
 # U-Nets
+
 
 class UNet(ConditionedModule):
     def __init__(self, d_blocks, u_blocks, skip_stages=0):
@@ -304,7 +317,7 @@ class UNet(ConditionedModule):
 
     def forward(self, input, cond):
         skips = []
-        for block in self.d_blocks[self.skip_stages:]:
+        for block in self.d_blocks[self.skip_stages :]:
             input = block(input, cond)
             skips.append(input)
         for i, (block, skip) in enumerate(zip(self.u_blocks, reversed(skips))):
